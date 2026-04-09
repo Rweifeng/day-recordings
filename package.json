@@ -27,10 +27,13 @@
     },
     "files": [
       "index.html",
+      "ball.html",
+      "ball.js",
       "style.css",
       "app.js",
       "main.js",
       "preload.js",
+      "ball-preload.js",
       "assets/**",
       "package.json"
     ],
@@ -44,6 +47,7 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
       "target": [
         {
           "target": "nsis",
@@ -63,7 +67,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "day-recordings"
+      "shortcutName": "day-recordings",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
     }
   }
 }

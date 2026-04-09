@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>day-ball</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: "Microsoft YaHei", sans-serif;
+      display: grid;
+      place-items: center;
+    }
+    .ball {
+      width: 42px;
+      height: 42px;
+      margin: 0;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.95);
+      box-shadow: 0 2px 8px rgba(44, 84, 210, 0.35);
+      background: radial-gradient(circle at 30% 28%, #9ec0ff 0%, #4e83ff 45%, #3c66dc 100%);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      user-select: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .ball.drag-over {
+      transform: scale(1.08);
+      box-shadow: 0 3px 10px rgba(22, 46, 122, 0.45);
+      background: radial-gradient(circle at 30% 28%, #b7ceff 0%, #6896ff 45%, #4a74e8 100%);
+    }
+    .tip {
+      position: fixed;
+      left: 50%;
+      bottom: -2px;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      color: #fff;
+      border-radius: 7px;
+      padding: 2px 6px;
+      font-size: 9px;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+    }
+    .tip.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="ball" class="ball" title="拖拽到此快速记录，点击恢复窗口">记</div>
+  <div id="tip" class="tip"></div>
+  <script src="./ball.js"></script>
+</body>
+</html>

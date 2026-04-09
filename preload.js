@@ -11,7 +11,16 @@ contextBridge.exposeInMainWorld("dayRecordingsAPI", {
   setTopMost: (value) => ipcRenderer.invoke("window:setTopMost", value),
   getCloseToTray: () => ipcRenderer.invoke("window:getCloseToTray"),
   setCloseToTray: (value) => ipcRenderer.invoke("window:setCloseToTray", value),
+  getMinimizeToBall: () => ipcRenderer.invoke("window:getMinimizeToBall"),
+  setMinimizeToBall: (value) => ipcRenderer.invoke("window:setMinimizeToBall", value),
+  showMainWindow: () => ipcRenderer.invoke("window:showMain"),
+  quickRecordDrop: (payload) => ipcRenderer.invoke("quickRecord:drop", payload),
   focusQuickEntry: () => ipcRenderer.invoke("window:focusQuickEntry"),
+  onRecordsChanged: (callback) => {
+    const handler = (_, payload) => callback(payload || {});
+    ipcRenderer.on("records:changed", handler);
+    return () => ipcRenderer.removeListener("records:changed", handler);
+  },
   onQuickEntryFocus: (callback) => {
     const handler = () => callback();
     ipcRenderer.on("quick-entry:focus-input", handler);

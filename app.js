@@ -28,6 +28,7 @@ const state = {
     skipDupImport: false,
     defaultLayout: "normal",
     closeToTray: false,
+    minimizeToBall: true,
   },
 };
 
@@ -61,6 +62,7 @@ const els = {
   settingsDialog: document.getElementById("settingsDialog"),
   skipDupImportCheck: document.getElementById("skipDupImportCheck"),
   closeToTrayCheck: document.getElementById("closeToTrayCheck"),
+  minimizeToBallCheck: document.getElementById("minimizeToBallCheck"),
   defaultLayoutSelect: document.getElementById("defaultLayoutSelect"),
   pathFromInput: document.getElementById("pathFromInput"),
   pathToInput: document.getElementById("pathToInput"),
@@ -81,6 +83,7 @@ async function initApp() {
     loadRecords(),
     syncTopMostState(),
     syncCloseToTrayState(),
+    syncMinimizeToBallState(),
   ]);
   state.recordsByDate = records;
 
@@ -224,6 +227,19 @@ function bindEvents() {
     nativeAPI.onQuickEntryFocus(() => {
       els.textInput.focus();
       els.textInput.select();
+    });
+  }
+
+  if (nativeAPI && typeof nativeAPI.onRecordsChanged === "function") {
+    nativeAPI.onRecordsChanged(async (payload) => {
+      const next = await loadRecords();
+      state.recordsByDate = next;
+      refreshDuplicateFlags();
+      resetPagination();
+      renderAll();
+      if (payload && payload.source === "ball" && payload.added) {
+        showToast(`悬浮球已记录 ${payload.added} 条`, "success");
+      }
     });
   }
 
@@ -779,6 +795,7 @@ function loadUIPreferences() {
     state.ui.skipDupImport = Boolean(prefs && prefs.skipDupImport);
     state.ui.defaultLayout = String((prefs && prefs.defaultLayout) || "normal");
     state.ui.closeToTray = Boolean(prefs && prefs.closeToTray);
+    state.ui.minimizeToBall = prefs && typeof prefs.minimizeToBall === "boolean" ? prefs.minimizeToBall : true;
     normalizeLayoutMode();
   } catch {
     state.compactMode = false;
@@ -795,6 +812,7 @@ function saveUIPreferences() {
       skipDupImport: state.ui.skipDupImport,
       defaultLayout: state.ui.defaultLayout,
       closeToTray: state.ui.closeToTray,
+      minimizeToBall: state.ui.minimizeToBall,
     }));
   } catch {
     // Ignore preference persistence errors.
@@ -859,6 +877,16 @@ async function syncCloseToTrayState() {
   const result = await nativeAPI.setCloseToTray(state.ui.closeToTray);
   if (result && result.ok) {
     state.ui.closeToTray = Boolean(result.value);
+  }
+}
+
+async function syncMinimizeToBallState() {
+  if (!nativeAPI || typeof nativeAPI.setMinimizeToBall !== "function") {
+    return;
+  }
+  const result = await nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
+  if (result && result.ok) {
+    state.ui.minimizeToBall = Boolean(result.value);
   }
 }
 
@@ -1209,6 +1237,7 @@ function openSettings() {
   }
   els.skipDupImportCheck.checked = state.ui.skipDupImport;
   els.closeToTrayCheck.checked = state.ui.closeToTray;
+  els.minimizeToBallCheck.checked = state.ui.minimizeToBall;
   els.defaultLayoutSelect.value = getCurrentLayoutMode();
   if (removeSettingsWheelGuard) {
     removeSettingsWheelGuard();
@@ -1229,12 +1258,16 @@ function openSettings() {
 function saveSettings() {
   state.ui.skipDupImport = els.skipDupImportCheck.checked;
   state.ui.closeToTray = Boolean(els.closeToTrayCheck.checked);
+  state.ui.minimizeToBall = Boolean(els.minimizeToBallCheck.checked);
   state.ui.defaultLayout = String(els.defaultLayoutSelect.value || "normal");
   setLayoutMode(state.ui.defaultLayout);
   applyCompactMode();
   updateLayoutModeButton();
   if (nativeAPI && typeof nativeAPI.setCloseToTray === "function") {
     nativeAPI.setCloseToTray(state.ui.closeToTray);
+  }
+  if (nativeAPI && typeof nativeAPI.setMinimizeToBall === "function") {
+    nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
   }
   saveUIPreferences();
   showToast("设置已保存", "success");

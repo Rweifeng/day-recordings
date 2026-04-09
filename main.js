@@ -8,6 +8,7 @@ const {
   Menu,
   globalShortcut,
   nativeImage,
+  screen,
 } = require("electron");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -28,6 +29,9 @@ let isShuttingDown = false;
 let saveQueue = Promise.resolve();
 let tray = null;
 let minimizeToTrayOnClose = false;
+let minimizeToBallOnMinimize = true;
+let ballWindow = null;
+let mainWindow = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -47,26 +51,99 @@ function createWindow() {
   });
 
   win.loadFile("index.html");
+  win.on("minimize", (event) => {
+    if (!minimizeToBallOnMinimize || isShuttingDown) {
+      return;
+    }
+    event.preventDefault();
+    win.hide();
+    showBallWindow();
+  });
   win.on("close", (event) => {
     if (isShuttingDown || !minimizeToTrayOnClose) {
       return;
     }
     event.preventDefault();
     win.hide();
+    showBallWindow(true);
   });
+  win.on("show", () => hideBallWindow());
+  win.on("restore", () => hideBallWindow());
   if (isWidgetMode) {
     win.setAlwaysOnTop(true, "screen-saver");
     win.setVisibleOnAllWorkspaces(true);
   }
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
+  return win;
 }
 
 function getMainWindow() {
-  return BrowserWindow.getAllWindows()[0] || null;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow;
+  }
+  return null;
 }
 
 async function ensureDataDirs() {
   await fsp.mkdir(FILES_DIR, { recursive: true });
   await fsp.mkdir(BACKUP_DIR, { recursive: true });
+}
+
+function isURLText(value) {
+  if (!value || typeof value !== "string") {
+    return false;
+  }
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function guessMimeTypeByExt(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".pdf": "application/pdf",
+    ".zip": "application/zip",
+  };
+  return map[ext] || "";
+}
+
+async function appendQuickRecords(items) {
+  saveQueue = saveQueue.then(async () => {
+    await ensureDataDirs();
+    let recordsByDate = {};
+    if (fs.existsSync(RECORDS_PATH)) {
+      try {
+        const raw = await fsp.readFile(RECORDS_PATH, "utf8");
+        recordsByDate = raw ? JSON.parse(raw) : {};
+      } catch {
+        recordsByDate = {};
+      }
+    }
+    const key = todayKey();
+    if (!Array.isArray(recordsByDate[key])) {
+      recordsByDate[key] = [];
+    }
+    for (const item of items) {
+      recordsByDate[key].push(item);
+    }
+    await fsp.writeFile(RECORDS_PATH, JSON.stringify(recordsByDate, null, 2), "utf8");
+  });
+  await saveQueue;
 }
 
 function focusMainWindowAndInput() {
@@ -79,8 +156,73 @@ function focusMainWindowAndInput() {
   }
   win.show();
   win.focus();
+  hideBallWindow();
   win.webContents.send("quick-entry:focus-input");
   return true;
+}
+
+function notifyRecordsChanged(payload = {}) {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+  win.webContents.send("records:changed", payload);
+}
+
+function createBallWindow() {
+  if (ballWindow && !ballWindow.isDestroyed()) {
+    return ballWindow;
+  }
+  ballWindow = new BrowserWindow({
+    width: 56,
+    height: 56,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    icon: APP_ICON_PATH,
+    webPreferences: {
+      preload: path.join(__dirname, "ball-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  ballWindow.setAlwaysOnTop(true, "screen-saver");
+  ballWindow.setVisibleOnAllWorkspaces(true);
+  positionBallWindow();
+  ballWindow.loadFile("ball.html");
+  ballWindow.on("closed", () => {
+    ballWindow = null;
+  });
+  return ballWindow;
+}
+
+function positionBallWindow() {
+  const win = createBallWindow();
+  const area = screen.getPrimaryDisplay().workArea;
+  const [w, h] = win.getSize();
+  const x = area.x + area.width - w - 10;
+  const y = area.y + Math.max(10, Math.floor((area.height - h) / 2));
+  win.setPosition(x, y);
+}
+
+function showBallWindow(force = false) {
+  if (!force && !minimizeToBallOnMinimize) {
+    return;
+  }
+  const win = createBallWindow();
+  positionBallWindow();
+  win.showInactive();
+}
+
+function hideBallWindow() {
+  if (ballWindow && !ballWindow.isDestroyed()) {
+    ballWindow.hide();
+  }
 }
 
 function createTrayImage() {
@@ -295,6 +437,96 @@ ipcMain.handle("window:setCloseToTray", async (_, value) => {
   return { ok: true, value: minimizeToTrayOnClose };
 });
 
+ipcMain.handle("window:getMinimizeToBall", async () => {
+  return { ok: true, value: minimizeToBallOnMinimize };
+});
+
+ipcMain.handle("window:setMinimizeToBall", async (_, value) => {
+  minimizeToBallOnMinimize = Boolean(value);
+  if (!minimizeToBallOnMinimize) {
+    hideBallWindow();
+  }
+  return { ok: true, value: minimizeToBallOnMinimize };
+});
+
+ipcMain.handle("window:showMain", async () => {
+  return { ok: focusMainWindowAndInput() };
+});
+
+ipcMain.handle("quickRecord:drop", async (_, payload) => {
+  const text = typeof (payload && payload.text) === "string" ? payload.text.trim() : "";
+  const paths = Array.isArray(payload && payload.paths) ? payload.paths.filter((p) => typeof p === "string" && p.trim()) : [];
+  const items = [];
+
+  if (text) {
+    items.push({
+      id: crypto.randomUUID(),
+      type: isURLText(text) ? "link" : "text",
+      text,
+      tags: [],
+      favorite: false,
+      deletedAt: 0,
+      createdAt: Date.now(),
+    });
+  }
+
+  for (const p of [...new Set(paths)]) {
+    const abs = path.resolve(p);
+    if (!fs.existsSync(abs)) {
+      continue;
+    }
+    const stat = await fsp.stat(abs);
+    if (stat.isDirectory()) {
+      items.push({
+        id: crypto.randomUUID(),
+        type: "file",
+        fileName: path.basename(abs),
+        fileSize: 0,
+        mimeType: "folder",
+        filePath: abs,
+        relativePath: path.relative(process.cwd(), abs),
+        sha256: "",
+        tags: [],
+        favorite: false,
+        deletedAt: 0,
+        createdAt: Date.now(),
+      });
+      continue;
+    }
+    if (!stat.isFile()) {
+      continue;
+    }
+    await ensureDataDirs();
+    const safeName = sanitizeFileName(path.basename(abs));
+    const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+    const dest = path.join(FILES_DIR, storedName);
+    await fsp.copyFile(abs, dest);
+    const contentBuffer = await fsp.readFile(dest);
+    const sha256 = crypto.createHash("sha256").update(contentBuffer).digest("hex");
+    items.push({
+      id: crypto.randomUUID(),
+      type: "file",
+      fileName: path.basename(abs),
+      fileSize: stat.size,
+      mimeType: guessMimeTypeByExt(abs),
+      filePath: dest,
+      relativePath: path.relative(process.cwd(), dest),
+      sha256,
+      tags: [],
+      favorite: false,
+      deletedAt: 0,
+      createdAt: Date.now(),
+    });
+  }
+
+  if (!items.length) {
+    return { ok: false, added: 0 };
+  }
+  await appendQuickRecords(items);
+  notifyRecordsChanged({ source: "ball", added: items.length, at: Date.now() });
+  return { ok: true, added: items.length };
+});
+
 function sanitizeFileName(name) {
   return String(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
 }
@@ -338,7 +570,7 @@ app.whenReady().then(() => {
   setupShortcuts();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!getMainWindow()) {
       createWindow();
     }
   });
