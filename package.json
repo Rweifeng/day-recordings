@@ -1,0 +1,69 @@
+{
+  "name": "day-recordings",
+  "version": "1.0.0",
+  "author": "day-recordings",
+  "description": "Daily recording desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:widget": "electron . --widget",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis --config.artifactName=day-recordings-${version}-${arch}-nsis.${ext}",
+    "dist:win:portable": "electron-builder --win portable --config.artifactName=day-recordings-${version}-${arch}-portable.${ext}",
+    "dist:win:all": "npm run dist:win && npm run dist:win:portable",
+    "dist:win:ts": "node scripts/build-win-ts.js"
+  },
+  "devDependencies": {
+    "electron": "^31.0.2",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.dayrecordings.app",
+    "productName": "day-recordings",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "main.js",
+      "preload.js",
+      "assets/**",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "day-recordings"
+    }
+  }
+}
