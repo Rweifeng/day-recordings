@@ -15,16 +15,18 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 
-const APP_DATA_DIR = path.join(process.cwd(), "day-recordings-data");
+const APP_DATA_DIR = path.join(app.getPath("userData"), "day-recordings-data");
+const LEGACY_APP_DATA_DIR = path.join(process.cwd(), "day-recordings-data");
 const RECORDS_PATH = path.join(APP_DATA_DIR, "records.json");
 const FILES_DIR = path.join(APP_DATA_DIR, "files");
 const BACKUP_DIR = path.join(APP_DATA_DIR, "backups");
 const LAST_BACKUP_META = path.join(APP_DATA_DIR, "last-backup.json");
+const SETTINGS_PATH = path.join(APP_DATA_DIR, "settings.json");
 const isWidgetMode = process.argv.includes("--widget");
 const windowMinWidth = isWidgetMode ? 360 : 520;
 const windowMinHeight = isWidgetMode ? 280 : 360;
-const APP_ICON_PATH = path.join(__dirname, "assets", "icon.png");
-const TRAY_ICON_PATH = path.join(__dirname, "assets", "tray.png");
+const APP_ICON_PNG_PATH = path.join(__dirname, "assets", "icon.png");
+const APP_ICON_ICO_PATH = path.join(__dirname, "assets", "icon.ico");
 let isShuttingDown = false;
 let saveQueue = Promise.resolve();
 let tray = null;
@@ -32,6 +34,9 @@ let minimizeToTrayOnClose = false;
 let minimizeToBallOnMinimize = true;
 let ballWindow = null;
 let mainWindow = null;
+let legacyMigrated = false;
+let settingsLoaded = false;
+let customFilesDir = "";
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -42,7 +47,7 @@ function createWindow() {
     alwaysOnTop: isWidgetMode,
     skipTaskbar: isWidgetMode,
     autoHideMenuBar: true,
-    icon: APP_ICON_PATH,
+    icon: process.platform === "win32" ? APP_ICON_ICO_PATH : APP_ICON_PNG_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -60,12 +65,18 @@ function createWindow() {
     showBallWindow();
   });
   win.on("close", (event) => {
-    if (isShuttingDown || !minimizeToTrayOnClose) {
+    if (isShuttingDown) {
       return;
     }
+    if (minimizeToTrayOnClose) {
+      event.preventDefault();
+      win.hide();
+      showBallWindow(true);
+      return;
+    }
+    // If close-to-tray is disabled, close should fully quit app and remove tray icon.
     event.preventDefault();
-    win.hide();
-    showBallWindow(true);
+    shutdownApp();
   });
   win.on("show", () => hideBallWindow());
   win.on("restore", () => hideBallWindow());
@@ -90,8 +101,81 @@ function getMainWindow() {
 }
 
 async function ensureDataDirs() {
-  await fsp.mkdir(FILES_DIR, { recursive: true });
+  await migrateLegacyDataIfNeeded();
+  await loadSettingsIfNeeded();
+  await fsp.mkdir(getFilesDir(), { recursive: true });
   await fsp.mkdir(BACKUP_DIR, { recursive: true });
+}
+
+function getFilesDir() {
+  if (customFilesDir && path.isAbsolute(customFilesDir)) {
+    return customFilesDir;
+  }
+  return FILES_DIR;
+}
+
+async function loadSettingsIfNeeded() {
+  if (settingsLoaded) {
+    return;
+  }
+  settingsLoaded = true;
+  await fsp.mkdir(APP_DATA_DIR, { recursive: true });
+  if (!fs.existsSync(SETTINGS_PATH)) {
+    return;
+  }
+  try {
+    const raw = await fsp.readFile(SETTINGS_PATH, "utf8");
+    const parsed = raw ? JSON.parse(raw) : {};
+    const nextDir = typeof parsed.customFilesDir === "string" ? parsed.customFilesDir.trim() : "";
+    customFilesDir = nextDir;
+  } catch {
+    customFilesDir = "";
+  }
+}
+
+async function saveSettings() {
+  await fsp.mkdir(APP_DATA_DIR, { recursive: true });
+  const payload = {
+    customFilesDir,
+  };
+  await fsp.writeFile(SETTINGS_PATH, JSON.stringify(payload, null, 2), "utf8");
+}
+
+async function migrateLegacyDataIfNeeded() {
+  if (legacyMigrated) {
+    return;
+  }
+  legacyMigrated = true;
+  if (APP_DATA_DIR === LEGACY_APP_DATA_DIR) {
+    return;
+  }
+  if (!fs.existsSync(LEGACY_APP_DATA_DIR)) {
+    return;
+  }
+  if (fs.existsSync(RECORDS_PATH)) {
+    return;
+  }
+  await fsp.mkdir(APP_DATA_DIR, { recursive: true });
+
+  const legacyRecords = path.join(LEGACY_APP_DATA_DIR, "records.json");
+  if (fs.existsSync(legacyRecords)) {
+    await fsp.copyFile(legacyRecords, RECORDS_PATH);
+  }
+
+  const legacyFiles = path.join(LEGACY_APP_DATA_DIR, "files");
+  if (fs.existsSync(legacyFiles)) {
+    await fsp.cp(legacyFiles, getFilesDir(), { recursive: true });
+  }
+
+  const legacyBackups = path.join(LEGACY_APP_DATA_DIR, "backups");
+  if (fs.existsSync(legacyBackups)) {
+    await fsp.cp(legacyBackups, BACKUP_DIR, { recursive: true });
+  }
+
+  const legacyMeta = path.join(LEGACY_APP_DATA_DIR, "last-backup.json");
+  if (fs.existsSync(legacyMeta)) {
+    await fsp.copyFile(legacyMeta, LAST_BACKUP_META);
+  }
 }
 
 function isURLText(value) {
@@ -184,7 +268,7 @@ function createBallWindow() {
     maximizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    icon: APP_ICON_PATH,
+    icon: process.platform === "win32" ? APP_ICON_ICO_PATH : APP_ICON_PNG_PATH,
     webPreferences: {
       preload: path.join(__dirname, "ball-preload.js"),
       contextIsolation: true,
@@ -226,13 +310,9 @@ function hideBallWindow() {
 }
 
 function createTrayImage() {
-  const trayImage = nativeImage.createFromPath(TRAY_ICON_PATH);
-  if (!trayImage.isEmpty()) {
-    return trayImage.resize({ width: 16, height: 16 });
-  }
-  const fallback = nativeImage.createFromPath(APP_ICON_PATH);
-  if (!fallback.isEmpty()) {
-    return fallback.resize({ width: 16, height: 16 });
+  const appIcon = nativeImage.createFromPath(APP_ICON_PNG_PATH);
+  if (!appIcon.isEmpty()) {
+    return appIcon.resize({ width: 16, height: 16 });
   }
   return nativeImage.createEmpty();
 }
@@ -361,7 +441,7 @@ ipcMain.handle("files:save", async (_, payload) => {
   await ensureDataDirs();
   const safeName = sanitizeFileName(fileName);
   const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
-  const absPath = path.join(FILES_DIR, storedName);
+  const absPath = path.join(getFilesDir(), storedName);
   const contentBuffer = Buffer.from(bytes);
   await fsp.writeFile(absPath, contentBuffer);
   const sha256 = crypto.createHash("sha256").update(contentBuffer).digest("hex");
@@ -449,6 +529,22 @@ ipcMain.handle("window:setMinimizeToBall", async (_, value) => {
   return { ok: true, value: minimizeToBallOnMinimize };
 });
 
+ipcMain.handle("storage:getFilesDir", async () => {
+  await ensureDataDirs();
+  return { ok: true, value: customFilesDir, effectiveDir: getFilesDir() };
+});
+
+ipcMain.handle("storage:setFilesDir", async (_, value) => {
+  const next = typeof value === "string" ? value.trim() : "";
+  if (next && !path.isAbsolute(next)) {
+    return { ok: false, message: "path must be absolute", value: customFilesDir, effectiveDir: getFilesDir() };
+  }
+  customFilesDir = next;
+  await ensureDataDirs();
+  await saveSettings();
+  return { ok: true, value: customFilesDir, effectiveDir: getFilesDir() };
+});
+
 ipcMain.handle("window:showMain", async () => {
   return { ok: focusMainWindowAndInput() };
 });
@@ -499,7 +595,7 @@ ipcMain.handle("quickRecord:drop", async (_, payload) => {
     await ensureDataDirs();
     const safeName = sanitizeFileName(path.basename(abs));
     const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
-    const dest = path.join(FILES_DIR, storedName);
+    const dest = path.join(getFilesDir(), storedName);
     await fsp.copyFile(abs, dest);
     const contentBuffer = await fsp.readFile(dest);
     const sha256 = crypto.createHash("sha256").update(contentBuffer).digest("hex");

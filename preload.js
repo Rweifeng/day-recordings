@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("dayRecordingsAPI", {
   setMinimizeToBall: (value) => ipcRenderer.invoke("window:setMinimizeToBall", value),
   showMainWindow: () => ipcRenderer.invoke("window:showMain"),
   quickRecordDrop: (payload) => ipcRenderer.invoke("quickRecord:drop", payload),
+  getFileStorageDir: () => ipcRenderer.invoke("storage:getFilesDir"),
+  setFileStorageDir: (value) => ipcRenderer.invoke("storage:setFilesDir", value),
   focusQuickEntry: () => ipcRenderer.invoke("window:focusQuickEntry"),
   onRecordsChanged: (callback) => {
     const handler = (_, payload) => callback(payload || {});

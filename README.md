@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿# day-recordings
+﻿﻿﻿﻿﻿﻿﻿﻿﻿# day-recordings
 
 一个面向日常工作的桌面记录工具：把你当天处理过的**文件 / 文本 / 链接**快速沉淀成时间轴，支持收藏、搜索筛选、回收站、导入导出与路径迁移。
 
@@ -55,14 +55,14 @@
 
 ## 5. 数据与目录
 
-启动后会在项目目录生成 `day-recordings-data`：
+启动后会在系统用户数据目录生成 `day-recordings-data`（Windows 通常在 `%APPDATA%` 下）：
 
 - `day-recordings-data/records.json`：主记录数据。
 - `day-recordings-data/files/`：拖入保存的文件。
 - `day-recordings-data/backups/`：每日自动快照备份。
 - `day-recordings-data/last-backup.json`：快照元信息。
 
-> 迁移方式：直接拷贝整个项目目录即可连同数据一起迁移。
+> 迁移方式：拷贝用户数据目录中的 `day-recordings-data` 即可连同记录迁移。
 
 ## 6. 快捷键与效率操作
 

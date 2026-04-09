@@ -29,6 +29,7 @@ const state = {
     defaultLayout: "normal",
     closeToTray: false,
     minimizeToBall: true,
+    fileStorageDir: "",
   },
 };
 
@@ -63,6 +64,7 @@ const els = {
   skipDupImportCheck: document.getElementById("skipDupImportCheck"),
   closeToTrayCheck: document.getElementById("closeToTrayCheck"),
   minimizeToBallCheck: document.getElementById("minimizeToBallCheck"),
+  storageDirInput: document.getElementById("storageDirInput"),
   defaultLayoutSelect: document.getElementById("defaultLayoutSelect"),
   pathFromInput: document.getElementById("pathFromInput"),
   pathToInput: document.getElementById("pathToInput"),
@@ -84,6 +86,7 @@ async function initApp() {
     syncTopMostState(),
     syncCloseToTrayState(),
     syncMinimizeToBallState(),
+    syncFileStorageDirState(),
   ]);
   state.recordsByDate = records;
 
@@ -285,6 +288,17 @@ function setupDropZone() {
 
     const files = Array.from(dt.files || []);
     if (files.length) {
+      const localPaths = files
+        .map((file) => (file && typeof file.path === "string" ? file.path.trim() : ""))
+        .filter(Boolean);
+      if (nativeAPI && typeof nativeAPI.quickRecordDrop === "function" && localPaths.length) {
+        const result = await nativeAPI.quickRecordDrop({ text: "", paths: localPaths });
+        if (result && result.ok) {
+          await reloadRecordsFromDisk();
+          showToast(`已记录 ${result.added} 条`, "success");
+          return;
+        }
+      }
       await addFileRecords(files);
       return;
     }
@@ -304,6 +318,14 @@ function setupDropZone() {
   window.addEventListener("drop", (event) => {
     event.preventDefault();
   });
+}
+
+async function reloadRecordsFromDisk() {
+  const next = await loadRecords();
+  state.recordsByDate = next;
+  refreshDuplicateFlags();
+  resetPagination();
+  renderAll();
 }
 
 function renderAll() {
@@ -796,6 +818,7 @@ function loadUIPreferences() {
     state.ui.defaultLayout = String((prefs && prefs.defaultLayout) || "normal");
     state.ui.closeToTray = Boolean(prefs && prefs.closeToTray);
     state.ui.minimizeToBall = prefs && typeof prefs.minimizeToBall === "boolean" ? prefs.minimizeToBall : true;
+    state.ui.fileStorageDir = String((prefs && prefs.fileStorageDir) || "");
     normalizeLayoutMode();
   } catch {
     state.compactMode = false;
@@ -813,6 +836,7 @@ function saveUIPreferences() {
       defaultLayout: state.ui.defaultLayout,
       closeToTray: state.ui.closeToTray,
       minimizeToBall: state.ui.minimizeToBall,
+      fileStorageDir: state.ui.fileStorageDir,
     }));
   } catch {
     // Ignore preference persistence errors.
@@ -887,6 +911,16 @@ async function syncMinimizeToBallState() {
   const result = await nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
   if (result && result.ok) {
     state.ui.minimizeToBall = Boolean(result.value);
+  }
+}
+
+async function syncFileStorageDirState() {
+  if (!nativeAPI || typeof nativeAPI.getFileStorageDir !== "function") {
+    return;
+  }
+  const result = await nativeAPI.getFileStorageDir();
+  if (result && result.ok) {
+    state.ui.fileStorageDir = String(result.value || "");
   }
 }
 
@@ -1238,6 +1272,9 @@ function openSettings() {
   els.skipDupImportCheck.checked = state.ui.skipDupImport;
   els.closeToTrayCheck.checked = state.ui.closeToTray;
   els.minimizeToBallCheck.checked = state.ui.minimizeToBall;
+  if (els.storageDirInput) {
+    els.storageDirInput.value = state.ui.fileStorageDir || "";
+  }
   els.defaultLayoutSelect.value = getCurrentLayoutMode();
   if (removeSettingsWheelGuard) {
     removeSettingsWheelGuard();
@@ -1255,10 +1292,11 @@ function openSettings() {
   els.settingsDialog.showModal();
 }
 
-function saveSettings() {
+async function saveSettings() {
   state.ui.skipDupImport = els.skipDupImportCheck.checked;
   state.ui.closeToTray = Boolean(els.closeToTrayCheck.checked);
   state.ui.minimizeToBall = Boolean(els.minimizeToBallCheck.checked);
+  state.ui.fileStorageDir = String((els.storageDirInput && els.storageDirInput.value) || "").trim();
   state.ui.defaultLayout = String(els.defaultLayoutSelect.value || "normal");
   setLayoutMode(state.ui.defaultLayout);
   applyCompactMode();
@@ -1268,6 +1306,17 @@ function saveSettings() {
   }
   if (nativeAPI && typeof nativeAPI.setMinimizeToBall === "function") {
     nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
+  }
+  if (nativeAPI && typeof nativeAPI.setFileStorageDir === "function") {
+    const result = await nativeAPI.setFileStorageDir(state.ui.fileStorageDir);
+    if (!result || !result.ok) {
+      showToast("保存目录失败：请填写绝对路径", "warning");
+      return;
+    }
+    state.ui.fileStorageDir = String(result.value || "");
+    if (els.storageDirInput) {
+      els.storageDirInput.value = state.ui.fileStorageDir;
+    }
   }
   saveUIPreferences();
   showToast("设置已保存", "success");
