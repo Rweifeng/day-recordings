@@ -137,6 +137,12 @@ npm run dist:win:ts
 
 会生成类似 `release-YYYYMMDD-HHMMSS/` 的输出目录。
 
+### 8.6 发布建议（GitHub Release 附件）
+
+- 不建议将安装包提交到仓库 Git 历史（文件大、克隆慢）。
+- 建议将 `release/` 目录产物作为 GitHub Release 附件上传分发。
+- 推荐命名：`星忆记-setup-latest.exe`（或按版本号命名）。
+
 ## 9. 常见问题
 
 ### 9.1 `app.asar` 被占用无法覆盖
