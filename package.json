@@ -1,8 +1,8 @@
 {
   "name": "day-recordings",
   "version": "1.0.0",
-  "author": "day-recordings",
-  "description": "Daily recording desktop app",
+  "author": "Rweifeng",
+  "description": "星忆记桌面记录工具",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.dayrecordings.app",
-    "productName": "day-recordings",
+    "productName": "星忆记",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
@@ -66,7 +66,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "day-recordings",
+      "shortcutName": "星忆记",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico"
     }

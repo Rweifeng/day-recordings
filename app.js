@@ -65,6 +65,7 @@ const els = {
   closeToTrayCheck: document.getElementById("closeToTrayCheck"),
   minimizeToBallCheck: document.getElementById("minimizeToBallCheck"),
   storageDirInput: document.getElementById("storageDirInput"),
+  openStorageDirBtn: document.getElementById("openStorageDirBtn"),
   defaultLayoutSelect: document.getElementById("defaultLayoutSelect"),
   pathFromInput: document.getElementById("pathFromInput"),
   pathToInput: document.getElementById("pathToInput"),
@@ -78,6 +79,7 @@ initApp();
 
 async function initApp() {
   loadUIPreferences();
+  await syncAppSettingsFromMain();
   applyDefaultLayout();
   renderAll();
 
@@ -221,6 +223,17 @@ function bindEvents() {
   els.saveSettingsBtn.addEventListener("click", () => {
     saveSettings();
   });
+  if (els.openStorageDirBtn) {
+    els.openStorageDirBtn.addEventListener("click", async () => {
+      if (!nativeAPI || typeof nativeAPI.openFileStorageDir !== "function") {
+        return;
+      }
+      const result = await nativeAPI.openFileStorageDir();
+      if (!result || !result.ok) {
+        showToast("打开目录失败", "warning");
+      }
+    });
+  }
 
   els.applyPathMapBtn.addEventListener("click", () => {
     applyPathRemap();
@@ -924,6 +937,22 @@ async function syncFileStorageDirState() {
   }
 }
 
+async function syncAppSettingsFromMain() {
+  if (!nativeAPI || typeof nativeAPI.getAppSettings !== "function") {
+    return;
+  }
+  const result = await nativeAPI.getAppSettings();
+  if (!result || !result.ok || !result.settings) {
+    return;
+  }
+  const s = result.settings;
+  state.ui.skipDupImport = Boolean(s.skipDupImport);
+  state.ui.defaultLayout = ["normal", "compact", "ultra"].includes(s.defaultLayout) ? s.defaultLayout : "normal";
+  state.ui.closeToTray = Boolean(s.closeToTray);
+  state.ui.minimizeToBall = typeof s.minimizeToBall === "boolean" ? s.minimizeToBall : true;
+  state.ui.fileStorageDir = String(s.fileStorageDir || "");
+}
+
 function updateTopMostButton() {
   if (!els.topMostBtn) {
     return;
@@ -1301,6 +1330,18 @@ async function saveSettings() {
   setLayoutMode(state.ui.defaultLayout);
   applyCompactMode();
   updateLayoutModeButton();
+  if (nativeAPI && typeof nativeAPI.setAppSettings === "function") {
+    const appSettingsResult = await nativeAPI.setAppSettings({
+      skipDupImport: state.ui.skipDupImport,
+      defaultLayout: state.ui.defaultLayout,
+      closeToTray: state.ui.closeToTray,
+      minimizeToBall: state.ui.minimizeToBall,
+    });
+    if (!appSettingsResult || !appSettingsResult.ok) {
+      showToast("设置持久化失败", "warning");
+      return;
+    }
+  }
   if (nativeAPI && typeof nativeAPI.setCloseToTray === "function") {
     nativeAPI.setCloseToTray(state.ui.closeToTray);
   }

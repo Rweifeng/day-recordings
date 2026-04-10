@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld("dayRecordingsAPI", {
   quickRecordDrop: (payload) => ipcRenderer.invoke("quickRecord:drop", payload),
   getFileStorageDir: () => ipcRenderer.invoke("storage:getFilesDir"),
   setFileStorageDir: (value) => ipcRenderer.invoke("storage:setFilesDir", value),
+  openFileStorageDir: () => ipcRenderer.invoke("storage:openFilesDir"),
+  getAppSettings: () => ipcRenderer.invoke("settings:get"),
+  setAppSettings: (settings) => ipcRenderer.invoke("settings:set", settings),
   focusQuickEntry: () => ipcRenderer.invoke("window:focusQuickEntry"),
   onRecordsChanged: (callback) => {
     const handler = (_, payload) => callback(payload || {});

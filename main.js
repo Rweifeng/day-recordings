@@ -37,6 +37,12 @@ let mainWindow = null;
 let legacyMigrated = false;
 let settingsLoaded = false;
 let customFilesDir = "";
+let uiSettings = {
+  skipDupImport: false,
+  defaultLayout: "normal",
+  closeToTray: false,
+  minimizeToBall: true,
+};
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -114,6 +120,16 @@ function getFilesDir() {
   return FILES_DIR;
 }
 
+function normalizeStorageDirInput(value) {
+  let next = typeof value === "string" ? value.trim() : "";
+  if (!next) {
+    return "";
+  }
+  // Remove accidental surrounding quotes from copy/paste, and trailing stray quote.
+  next = next.replace(/^["']+|["']+$/g, "");
+  return next.trim();
+}
+
 async function loadSettingsIfNeeded() {
   if (settingsLoaded) {
     return;
@@ -126,8 +142,18 @@ async function loadSettingsIfNeeded() {
   try {
     const raw = await fsp.readFile(SETTINGS_PATH, "utf8");
     const parsed = raw ? JSON.parse(raw) : {};
-    const nextDir = typeof parsed.customFilesDir === "string" ? parsed.customFilesDir.trim() : "";
+    const nextDir = normalizeStorageDirInput(parsed.customFilesDir);
     customFilesDir = nextDir;
+    const inputUi = parsed && typeof parsed.ui === "object" ? parsed.ui : {};
+    uiSettings = {
+      ...uiSettings,
+      skipDupImport: Boolean(inputUi.skipDupImport),
+      defaultLayout: ["normal", "compact", "ultra"].includes(inputUi.defaultLayout) ? inputUi.defaultLayout : "normal",
+      closeToTray: Boolean(inputUi.closeToTray),
+      minimizeToBall: typeof inputUi.minimizeToBall === "boolean" ? inputUi.minimizeToBall : true,
+    };
+    minimizeToTrayOnClose = uiSettings.closeToTray;
+    minimizeToBallOnMinimize = uiSettings.minimizeToBall;
   } catch {
     customFilesDir = "";
   }
@@ -137,6 +163,7 @@ async function saveSettings() {
   await fsp.mkdir(APP_DATA_DIR, { recursive: true });
   const payload = {
     customFilesDir,
+    ui: uiSettings,
   };
   await fsp.writeFile(SETTINGS_PATH, JSON.stringify(payload, null, 2), "utf8");
 }
@@ -322,7 +349,7 @@ function setupTray() {
     return;
   }
   tray = new Tray(createTrayImage());
-  tray.setToolTip("day-recordings");
+  tray.setToolTip("星忆记");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "快速记录", click: () => focusMainWindowAndInput() },
@@ -535,7 +562,7 @@ ipcMain.handle("storage:getFilesDir", async () => {
 });
 
 ipcMain.handle("storage:setFilesDir", async (_, value) => {
-  const next = typeof value === "string" ? value.trim() : "";
+  const next = normalizeStorageDirInput(value);
   if (next && !path.isAbsolute(next)) {
     return { ok: false, message: "path must be absolute", value: customFilesDir, effectiveDir: getFilesDir() };
   }
@@ -543,6 +570,40 @@ ipcMain.handle("storage:setFilesDir", async (_, value) => {
   await ensureDataDirs();
   await saveSettings();
   return { ok: true, value: customFilesDir, effectiveDir: getFilesDir() };
+});
+
+ipcMain.handle("storage:openFilesDir", async () => {
+  await ensureDataDirs();
+  const target = normalizeStorageDirInput(getFilesDir());
+  await fsp.mkdir(target, { recursive: true });
+  const message = await shell.openPath(target);
+  return { ok: !message, path: target, message: message || "" };
+});
+
+ipcMain.handle("settings:get", async () => {
+  await ensureDataDirs();
+  return {
+    ok: true,
+    settings: {
+      ...uiSettings,
+      fileStorageDir: customFilesDir,
+    },
+  };
+});
+
+ipcMain.handle("settings:set", async (_, incoming) => {
+  const next = incoming && typeof incoming === "object" ? incoming : {};
+  uiSettings = {
+    ...uiSettings,
+    skipDupImport: Boolean(next.skipDupImport),
+    defaultLayout: ["normal", "compact", "ultra"].includes(next.defaultLayout) ? next.defaultLayout : uiSettings.defaultLayout,
+    closeToTray: Boolean(next.closeToTray),
+    minimizeToBall: typeof next.minimizeToBall === "boolean" ? next.minimizeToBall : uiSettings.minimizeToBall,
+  };
+  minimizeToTrayOnClose = uiSettings.closeToTray;
+  minimizeToBallOnMinimize = uiSettings.minimizeToBall;
+  await saveSettings();
+  return { ok: true, settings: { ...uiSettings } };
 });
 
 ipcMain.handle("window:showMain", async () => {
@@ -660,7 +721,8 @@ function shutdownApp() {
   setTimeout(() => app.exit(0), 1500);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await loadSettingsIfNeeded();
   createWindow();
   setupTray();
   setupShortcuts();
