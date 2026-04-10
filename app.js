@@ -86,9 +86,6 @@ async function initApp() {
   const [records] = await Promise.all([
     loadRecords(),
     syncTopMostState(),
-    syncCloseToTrayState(),
-    syncMinimizeToBallState(),
-    syncFileStorageDirState(),
   ]);
   state.recordsByDate = records;
 
@@ -559,15 +556,28 @@ function renderRecordContent(record) {
           showToast(msg, "warning");
         }
       });
-      const copyBtn = document.createElement("button");
-      copyBtn.className = "ghost-btn";
-      copyBtn.textContent = "复制路径";
-      copyBtn.addEventListener("click", async () => {
+      const revealBtn = document.createElement("button");
+      revealBtn.className = "ghost-btn";
+      revealBtn.textContent = "前往";
+      revealBtn.addEventListener("click", async () => {
+        if (nativeAPI && typeof nativeAPI.revealFile === "function") {
+          const result = await nativeAPI.revealFile(record.filePath);
+          if (!result || !result.ok) {
+            const msg = result && result.exists === false
+              ? "路径不存在，可能已被移动或删除。"
+              : "无法打开所在位置。";
+            showToast(msg, "warning");
+          }
+          return;
+        }
         const ok = await copyTextToClipboard(record.filePath);
         showToast(ok ? "已复制完整路径" : "复制失败，请重试", ok ? "success" : "warning");
       });
-      box.appendChild(openBtn);
-      box.appendChild(copyBtn);
+      const actions = document.createElement("div");
+      actions.className = "record-actions";
+      actions.appendChild(openBtn);
+      actions.appendChild(revealBtn);
+      box.appendChild(actions);
       return box;
     }
 
@@ -824,32 +834,16 @@ function loadUIPreferences() {
       return;
     }
     const prefs = JSON.parse(raw);
-    state.compactMode = Boolean(prefs && prefs.compactMode);
-    state.ultraCompactMode = Boolean(prefs && prefs.ultraCompactMode);
     state.ui.guideShown = Boolean(prefs && prefs.guideShown);
-    state.ui.skipDupImport = Boolean(prefs && prefs.skipDupImport);
-    state.ui.defaultLayout = String((prefs && prefs.defaultLayout) || "normal");
-    state.ui.closeToTray = Boolean(prefs && prefs.closeToTray);
-    state.ui.minimizeToBall = prefs && typeof prefs.minimizeToBall === "boolean" ? prefs.minimizeToBall : true;
-    state.ui.fileStorageDir = String((prefs && prefs.fileStorageDir) || "");
-    normalizeLayoutMode();
   } catch {
-    state.compactMode = false;
-    state.ultraCompactMode = false;
+    // Ignore preference parse errors.
   }
 }
 
 function saveUIPreferences() {
   try {
     localStorage.setItem(UI_PREF_KEY, JSON.stringify({
-      compactMode: state.compactMode,
-      ultraCompactMode: state.ultraCompactMode,
       guideShown: state.ui.guideShown,
-      skipDupImport: state.ui.skipDupImport,
-      defaultLayout: state.ui.defaultLayout,
-      closeToTray: state.ui.closeToTray,
-      minimizeToBall: state.ui.minimizeToBall,
-      fileStorageDir: state.ui.fileStorageDir,
     }));
   } catch {
     // Ignore preference persistence errors.
@@ -889,7 +883,14 @@ function cycleLayoutMode() {
     state.ultraCompactMode = false;
   }
   state.ui.defaultLayout = getCurrentLayoutMode();
-  saveUIPreferences();
+  if (nativeAPI && typeof nativeAPI.setAppSettings === "function") {
+    nativeAPI.setAppSettings({
+      skipDupImport: state.ui.skipDupImport,
+      defaultLayout: state.ui.defaultLayout,
+      closeToTray: state.ui.closeToTray,
+      minimizeToBall: state.ui.minimizeToBall,
+    });
+  }
   applyCompactMode();
   updateLayoutModeButton();
 }
@@ -905,36 +906,6 @@ async function syncTopMostState() {
   }
   const result = await nativeAPI.getTopMost();
   state.isTopMost = Boolean(result && result.ok && result.value);
-}
-
-async function syncCloseToTrayState() {
-  if (!nativeAPI || typeof nativeAPI.setCloseToTray !== "function") {
-    return;
-  }
-  const result = await nativeAPI.setCloseToTray(state.ui.closeToTray);
-  if (result && result.ok) {
-    state.ui.closeToTray = Boolean(result.value);
-  }
-}
-
-async function syncMinimizeToBallState() {
-  if (!nativeAPI || typeof nativeAPI.setMinimizeToBall !== "function") {
-    return;
-  }
-  const result = await nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
-  if (result && result.ok) {
-    state.ui.minimizeToBall = Boolean(result.value);
-  }
-}
-
-async function syncFileStorageDirState() {
-  if (!nativeAPI || typeof nativeAPI.getFileStorageDir !== "function") {
-    return;
-  }
-  const result = await nativeAPI.getFileStorageDir();
-  if (result && result.ok) {
-    state.ui.fileStorageDir = String(result.value || "");
-  }
 }
 
 async function syncAppSettingsFromMain() {
@@ -1341,12 +1312,13 @@ async function saveSettings() {
       showToast("设置持久化失败", "warning");
       return;
     }
-  }
-  if (nativeAPI && typeof nativeAPI.setCloseToTray === "function") {
-    nativeAPI.setCloseToTray(state.ui.closeToTray);
-  }
-  if (nativeAPI && typeof nativeAPI.setMinimizeToBall === "function") {
-    nativeAPI.setMinimizeToBall(state.ui.minimizeToBall);
+    if (appSettingsResult.settings) {
+      const s = appSettingsResult.settings;
+      state.ui.skipDupImport = Boolean(s.skipDupImport);
+      state.ui.defaultLayout = ["normal", "compact", "ultra"].includes(s.defaultLayout) ? s.defaultLayout : state.ui.defaultLayout;
+      state.ui.closeToTray = Boolean(s.closeToTray);
+      state.ui.minimizeToBall = typeof s.minimizeToBall === "boolean" ? s.minimizeToBall : state.ui.minimizeToBall;
+    }
   }
   if (nativeAPI && typeof nativeAPI.setFileStorageDir === "function") {
     const result = await nativeAPI.setFileStorageDir(state.ui.fileStorageDir);

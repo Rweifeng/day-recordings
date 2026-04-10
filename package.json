@@ -68,7 +68,8 @@
       "createDesktopShortcut": true,
       "shortcutName": "星忆记",
       "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
+      "uninstallerIcon": "assets/icon.ico",
+      "differentialPackage": false
     }
   }
 }

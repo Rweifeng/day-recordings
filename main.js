@@ -493,6 +493,26 @@ ipcMain.handle("files:open", async (_, absPath) => {
   return { ok: !result, message: result || "", exists: true };
 });
 
+ipcMain.handle("files:reveal", async (_, absPath) => {
+  if (!absPath || typeof absPath !== "string") {
+    return { ok: false, message: "invalid path", exists: false };
+  }
+  if (!fs.existsSync(absPath)) {
+    return { ok: false, message: "file not found", exists: false };
+  }
+  try {
+    const stat = await fsp.stat(absPath);
+    if (stat.isDirectory()) {
+      const result = await shell.openPath(absPath);
+      return { ok: !result, message: result || "", exists: true };
+    }
+    shell.showItemInFolder(absPath);
+    return { ok: true, message: "", exists: true };
+  } catch (error) {
+    return { ok: false, message: String(error && error.message ? error.message : error), exists: true };
+  }
+});
+
 ipcMain.handle("url:openExternal", async (_, url) => {
   if (!url || typeof url !== "string") {
     return { ok: false, message: "invalid url" };

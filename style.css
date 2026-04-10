@@ -368,6 +368,13 @@ body {
   white-space: pre-wrap;
 }
 
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .timeline-content a {
   color: var(--accent);
 }

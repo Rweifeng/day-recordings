@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("dayRecordingsAPI", {
   saveRecords: (recordsByDate) => ipcRenderer.invoke("records:save", recordsByDate),
   saveDroppedFile: (payload) => ipcRenderer.invoke("files:save", payload),
   openFile: (absPath) => ipcRenderer.invoke("files:open", absPath),
+  revealFile: (absPath) => ipcRenderer.invoke("files:reveal", absPath),
   openExternalURL: (url) => ipcRenderer.invoke("url:openExternal", url),
   copyText: (text) => ipcRenderer.invoke("clipboard:writeText", text),
   getTopMost: () => ipcRenderer.invoke("window:getTopMost"),

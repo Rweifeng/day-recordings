@@ -11,6 +11,8 @@ const args = [
   "electron-builder",
   "--win",
   "nsis",
+  "--publish",
+  "never",
   "--config.directories.output=" + outputDir,
   "--config.artifactName=day-recordings-${version}-${arch}-nsis.${ext}",
 ];
